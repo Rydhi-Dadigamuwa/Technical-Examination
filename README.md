@@ -191,7 +191,7 @@ Ranks the 20 cities with the most listings by their average review score, star r
 
 
 
-## Scalability & Architecture
+## Scalability & Architecture (Read Word file for further)
 
 ### Scaling to 1 Million+ Records
 
