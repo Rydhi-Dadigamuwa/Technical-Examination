@@ -1,5 +1,9 @@
 # MakeMyTrip Hotel Listings — ETL Pipeline
 
+> **Author:** Rydhi Dadigamuwa  
+> **GitHub:** https://github.com/Rydhi-Dadigamuwa/Technical-Examination  
+> **Dataset:** [MakeMyTrip hotel listings sample (20,046 records)](https://www.kaggle.com/datasets/PromptCloudHQ/hotels-on-makemytrip)
+
 A production-style ETL pipeline that extracts raw hotel data, cleans and validates it, loads it into PostgreSQL, and integrates with AWS S3 for raw and processed data storage.
 
 ---
@@ -30,9 +34,10 @@ A production-style ETL pipeline that extracts raw hotel data, cleans and validat
 
 ```bash
 git clone https://github.com/Rydhi-Dadigamuwa/Technical-Examination.git
-cd <repo-folder>
+cd Technical-Examination
 pip install -r requirements.txt
 ```
+
 
 ### 2. Add your dataset
 
@@ -45,7 +50,7 @@ data/makemytrip_com-travel_sample.csv
 
 ```bash
 cp .env.example .env
-# Edit .env with your actual values
+# Edit .env with your actual AWS credentials and PostgreSQL password
 ```
 
 ### 4. Set up PostgreSQL
@@ -70,76 +75,50 @@ python run_pipeline.py --source data/myfile.csv --table my_table
 
 ### 6. Run analytical queries
 
-```bash
-psql -U postgres -d hotels -f queries.sql
-```
+Open pgAdmin, connect to the hotels database, and run the queries from queries.sql
 
 ---
+
+## How It Works
+
+When the command `python run_pipeline.py` is executed, the following process runs automatically in sequence.
+
+First, the raw CSV file from the local machine is uploaded to AWS S3 in the `raw/` folder. This preserves the original data in the cloud before any processing begins.
+
+Second, the pipeline downloads that same file back from S3 and loads it into memory. This confirms the S3 integration is working and ensures all data processing happens on data that has been safely stored in the cloud.
+
+Third, the ETL process runs through all cleaning and validation stages. Finally, the cleaned dataset is uploaded back to AWS S3 in the `processed/` folder with a timestamp in the filename, creating a versioned backup of the pipeline output.
+
+---
+
 
 ## Pipeline Steps
 
 | Step | Function | Description |
 |------|----------|-------------|
 | 0 | `upload_raw_to_s3()` | Uploads local CSV to `s3://<bucket>/raw/` before any processing |
-| 1 | `extract()` | Reads CSV from local disk, ZIP, or directly from S3 |
+| 1 | `extract()` | Downloads CSV from S3 and loads into memory |
 | 2 | `standardize_formats()` | Fixes dates, casing, numeric types, boolean flags |
 | 3 | `clean_missing_values()` | Fills NULLs with domain-appropriate defaults |
 | 4 | `remove_duplicates()` | Removes exact row duplicates and duplicate `uniq_id` rows |
-| 5 | `validate_constraints()` | Applies 7 business rules; failing rows go to rejected set |
+| 5 | `validate_constraints()` | Applies 7 business rules — failing rows go to rejected set |
 | 6 | `log_rejected_records()` | Saves rejected rows + reason to `logs/rejected_records.csv` |
-| 7 | `load_to_postgres()` | Writes clean data to PostgreSQL (or SQLite fallback) |
+| 7 | `load_to_postgres()` | Writes 13,649 clean rows to PostgreSQL |
 | 8 | `upload_clean_to_s3()` | Uploads cleaned CSV to `s3://<bucket>/processed/` |
 
----
-
-## AWS S3 Integration
-
-The pipeline stores data in two S3 zones:
-
-```
-s3://<your-bucket>/
-├── raw/
-│   └── makemytrip_com-travel_sample.csv    ← uploaded at start of run
-└── processed/
-    └── hotels_clean_20240615_143022.csv    ← uploaded after cleaning
-```
-
-### IAM Permissions Required (Least Privilege)
-
-Create an IAM user with only this policy — no admin access needed:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::your-bucket-name",
-        "arn:aws:s3:::your-bucket-name/*"
-      ]
-    }
-  ]
-}
-```
 
 ### AWS Setup Steps
 
 1. Go to **IAM → Users → Create user**
-2. Attach the policy above (inline or managed)
+2. Attach `AmazonS3FullAccess` policy
 3. Go to **Security credentials → Create access key**
 4. Copy `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` to your `.env`
-5. Go to **S3 → Create bucket** (choose same region as `AWS_REGION`)
+5. Go to **S3 → Create bucket** in region `eu-north-1`
 6. Add bucket name to `S3_BUCKET` in your `.env`
 
 ---
 
-## Database Schema (Refer Word Document for further understanding)
+## Database Schema
 
 ### `hotel_listings` (main table)
 
@@ -152,26 +131,41 @@ Create an IAM user with only this policy — no admin access needed:
 | `city` | VARCHAR NOT NULL | Validated not-null |
 | `state` | VARCHAR | Defaults to 'Unknown' |
 | `country` | VARCHAR | Defaults to 'India' |
-| `latitude` | NUMERIC | Constrained 5.0–40.0 (India) |
-| `longitude` | NUMERIC | Constrained 65.0–98.0 (India) |
+| `latitude` | NUMERIC | Constrained 5.0–40.0 (India bounding box) |
+| `longitude` | NUMERIC | Constrained 65.0–98.0 (India bounding box) |
 | `hotel_star_rating` | NUMERIC | 0–5, where 0 = unrated |
 | `mmt_review_score` | NUMERIC | 0.0–5.0 |
 | `mmt_review_count` | INTEGER | ≥ 0 |
-| `crawl_date` | DATE | ISO format |
+| `crawl_date` | DATE | ISO format YYYY-MM-DD |
+
+### `pipeline_audit` (audit table)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `run_id` | SERIAL PRIMARY KEY | Auto increment |
+| `run_at` | TIMESTAMP | When the pipeline ran |
+| `source_file` | VARCHAR | Source CSV file name |
+| `raw_row_count` | INTEGER | Total rows extracted |
+| `clean_row_count` | INTEGER | Rows loaded to database |
+| `rejected_count` | INTEGER | Rows that failed validation |
+| `elapsed_seconds` | NUMERIC | Pipeline run time |
+| `status` | VARCHAR | success or failed |
 
 ### Indexes
 
 | Index | Columns | Supports |
-|-------|---------|---------|
+|-------|---------|----------|
 | `idx_property_type` | property_type | Query 1 — group by type |
 | `idx_crawl_date` | crawl_date | Query 2 — monthly trend |
 | `idx_city_state` | city, state | Query 3 — rating by city |
 | `idx_star_rating` | hotel_star_rating | Dashboard star filters |
 | `idx_mmt_review_score` | mmt_review_score | Score range queries |
 | `idx_lat_lon` | latitude, longitude | Geo bounding-box queries |
-| `idx_type_star` | property_type, hotel_star_rating | Composite filter |
+| `idx_type_star` | property_type, hotel_star_rating | Composite dashboard filter |
 
 ---
+
+
 
 ## Analytical Queries
 
