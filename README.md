@@ -167,6 +167,65 @@ Third, the ETL process runs through all cleaning and validation stages. Finally,
 
 
 
+## Optimization Decisions
+
+### Why These Indexes Were Chosen
+
+The goal of indexing is to avoid full sequential scans where PostgreSQL reads every single row in the table to find what it needs. With 13,649 rows this is manageable, but at 100,000 or 1 million rows a sequential scan becomes very slow. Every index in this project was chosen based on a specific query pattern.
+
+**idx_property_type** was created because Query 1 filters and groups by property_type. Without this index PostgreSQL scans all rows to find hotels matching each type. With the index it jumps directly to the relevant rows. This is a single column B-tree index which works best for equality filters and GROUP BY operations.
+
+**idx_crawl_date** was created because Query 2 groups by month using DATE_TRUNC on crawl_date. Date columns that are used for range queries and time-based grouping benefit greatly from B-tree indexes because dates have a natural order that the index can exploit.
+
+**idx_city_state** is a composite index on both city and state together. This was chosen instead of two separate indexes because Query 3 groups by both columns simultaneously. A composite index covers both columns in a single index lookup which is more efficient than PostgreSQL having to merge two separate indexes.
+
+**idx_star_rating** and **idx_mmt_review_score** were added because filtering by star rating and review score are the two most common operations in any hotel analytics dashboard. These columns appear in WHERE clauses frequently.
+
+**idx_lat_lon** is a composite index on latitude and longitude together. Geographic queries that filter by a bounding box always use both columns together so a composite index is more efficient than two separate ones.
+
+**idx_type_star** is a composite index on property_type and hotel_star_rating together. This covers the very common dashboard query pattern of filtering by both type and star rating at the same time such as show me all 5 star Resorts.
+
+---
+
+### Why Noisy Columns Were Dropped Before Loading
+
+Seven columns including image_urls, hotel_overview, pageurl and in_your_room were dropped before loading into the database. These columns contain unstructured text and HTML content that cannot be queried or indexed meaningfully. Storing them would increase the table size significantly, slow down every query due to larger row sizes, and provide no analytical value. Dropping them reduced the column count from 33 to 26.
+
+---
+
+### Why Data Is Loaded in Chunks
+
+The pipeline loads data in chunks of 1,000 rows at a time using `chunksize=1000` in the `to_sql()` call. This was chosen instead of loading all 13,649 rows in a single insert because large single inserts can lock the table for a long time and cause memory spikes. Chunked loading keeps memory usage stable and allows other database operations to proceed between chunks.
+
+---
+
+### Why Review Scores Were Not Filled With Defaults
+
+When cleaning missing values, review counts were filled with 0 but review scores were intentionally left as NULL. Filling a missing review score with 0 or with an average would corrupt analytical results. A hotel with no reviews should not appear to have a score of 0 because that would make it rank below hotels that genuinely received poor reviews. Keeping it as NULL means it is correctly excluded from AVG calculations automatically by PostgreSQL.
+
+---
+
+### Why Validation Runs After Cleaning
+
+The pipeline runs standardization and cleaning before validation on purpose. This order gives every row the best chance of passing validation. For example a row with a missing property_type gets filled with Unknown during cleaning, which means it does not fail the not-null check during validation. Running validation before cleaning would reject rows that could have been saved with simple defaults.
+
+---
+
+### How to See Index Performance
+
+Run this in pgAdmin to see the index being used:
+```sql
+EXPLAIN ANALYZE
+SELECT property_type, COUNT(*)
+FROM hotel_listings
+WHERE property_type <> 'Unknown'
+GROUP BY property_type
+ORDER BY 2 DESC LIMIT 10;
+```
+
+Look for **Index Scan using idx_property_type** in the output. This confirms PostgreSQL is using the index instead of a full Sequential Scan. On a table with 1 million records this difference would mean the query runs in milliseconds instead of several seconds.
+
+
 ## Analytical Queries
 
 ### Query 1 — Top Property Types by Review Score
