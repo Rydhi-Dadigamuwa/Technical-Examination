@@ -1,0 +1,12 @@
+2026-03-04 06:16:57  INFO      =================================================================
+2026-03-04 06:16:57  INFO        MAKEMYTRIP HOTEL LISTINGS — ETL PIPELINE
+2026-03-04 06:16:57  INFO      =================================================================
+2026-03-04 06:16:57  INFO        Source   : data/makemytrip_com-travel_sample.csv
+2026-03-04 06:16:57  INFO        Database : postgresql://postgres:123456@localhost:5432/hotels
+2026-03-04 06:16:57  INFO        Table    : hotel_listings
+2026-03-04 06:16:57  INFO        S3 Bucket: makemytrip-hotels-etl
+2026-03-04 06:16:57  INFO        Log file : logs/pipeline_20260304_061657.log
+2026-03-04 06:16:57  INFO      =================================================================
+2026-03-04 06:16:57  INFO      
+── STEP 0: UPLOAD RAW FILE TO S3 ────────────────────────────
+2026-03-04 06:16:57  INFO      [S3 UPLOAD] Uploading 'data/makemytrip_com-travel_sample.csv' → s3://makemytrip-hotels-etl/raw/makemytrip_com-travel_sample.csv ...

@@ -1,0 +1,70 @@
+2026-03-04 07:08:17  INFO      =================================================================
+2026-03-04 07:08:17  INFO        MAKEMYTRIP HOTEL LISTINGS — ETL PIPELINE
+2026-03-04 07:08:17  INFO      =================================================================
+2026-03-04 07:08:17  INFO        Source   : data/makemytrip_com-travel_sample.csv
+2026-03-04 07:08:17  INFO        Database : postgresql://postgres:123456@localhost:5432/hotels
+2026-03-04 07:08:17  INFO        Table    : hotel_listings
+2026-03-04 07:08:17  INFO        S3 Bucket: makemytrip-hotels-etl
+2026-03-04 07:08:17  INFO        Log file : logs/pipeline_20260304_070817.log
+2026-03-04 07:08:17  INFO      =================================================================
+2026-03-04 07:08:17  INFO      
+── STEP 0: UPLOAD RAW FILE TO S3 ────────────────────────────
+2026-03-04 07:08:17  INFO      [S3 UPLOAD] Uploading 'data/makemytrip_com-travel_sample.csv' → s3://makemytrip-hotels-etl/raw/makemytrip_com-travel_sample.csv ...
+2026-03-04 07:09:09  INFO      [S3 UPLOAD] ✓ Raw file uploaded to s3://makemytrip-hotels-etl/raw/makemytrip_com-travel_sample.csv
+2026-03-04 07:09:09  INFO      
+── STEP 1: EXTRACT ──────────────────────────────────────────
+2026-03-04 07:09:09  INFO      [EXTRACT] Source: s3://makemytrip-hotels-etl/raw/makemytrip_com-travel_sample.csv
+2026-03-04 07:09:09  INFO      [EXTRACT] Downloading from S3: s3://makemytrip-hotels-etl/raw/makemytrip_com-travel_sample.csv
+2026-03-04 07:09:43  INFO      [EXTRACT] Loaded 20,046 rows x 33 columns
+2026-03-04 07:09:43  INFO      
+── STEP 2: STANDARDIZE FORMATS ──────────────────────────────
+2026-03-04 07:09:43  INFO      [STANDARDIZE] hotel_star_rating → float  (43 invalid → NaN)
+2026-03-04 07:09:43  INFO      [STANDARDIZE] mmt_review_rating: nulled 4,836 template values
+2026-03-04 07:09:43  INFO      [STANDARDIZE] Review scores → float 0.0–5.0
+2026-03-04 07:09:43  INFO      [STANDARDIZE] Review counts → integer
+2026-03-04 07:09:43  INFO      [STANDARDIZE] crawl_date → YYYY-MM-DD  (9,349 unparseable → NaN)
+2026-03-04 07:09:50  INFO      [STANDARDIZE] query_time_stamp → UTC datetime string
+2026-03-04 07:09:50  INFO      [STANDARDIZE] latitude / longitude → float
+2026-03-04 07:09:50  INFO      [STANDARDIZE] property_type → canonical  (115 unmapped → NaN)
+2026-03-04 07:09:50  INFO      [STANDARDIZE] country / city / state / property_name → Title Case
+2026-03-04 07:09:50  INFO      [STANDARDIZE] is_value_plus → 0/1 integer
+2026-03-04 07:09:50  INFO      
+── STEP 3: CLEAN MISSING VALUES ─────────────────────────────
+2026-03-04 07:09:50  INFO      [CLEAN]    Filled 51,292 null values  (142,953 remain as intentional NaN)
+2026-03-04 07:09:50  INFO      
+── STEP 4: REMOVE DUPLICATES ────────────────────────────────
+2026-03-04 07:09:50  INFO      [DEDUPE]   Removed 2,210 exact duplicate rows
+2026-03-04 07:09:50  INFO      [DEDUPE]   Removed 0 duplicate uniq_id rows
+2026-03-04 07:09:50  INFO      [DEDUPE]   Rows remaining: 17,836
+2026-03-04 07:09:50  INFO      
+── STEP 5: VALIDATE CONSTRAINTS ─────────────────────────────
+2026-03-04 07:09:50  INFO      [VALIDATE] Constraint check results:
+2026-03-04 07:09:50  INFO        V5_invalid_latitude                     4,170 rows failed
+2026-03-04 07:09:50  INFO        V6_invalid_longitude                    4,186 rows failed
+2026-03-04 07:09:50  INFO      [VALIDATE] Clean: 13,649    Rejected: 4,187
+2026-03-04 07:09:50  INFO      
+── STEP 6: LOG REJECTED RECORDS ─────────────────────────────
+2026-03-04 07:09:50  INFO      [REJECTED] 4,187 rows saved → logs/rejected_records.csv
+2026-03-04 07:09:50  INFO      [REJECTED] Breakdown by rejection reason:
+2026-03-04 07:09:50  INFO        V5_invalid_latitude                         4,170 rows
+2026-03-04 07:09:50  INFO        V6_invalid_longitude                           17 rows
+2026-03-04 07:09:50  INFO      
+── STEP 7: LOAD TO POSTGRESQL ───────────────────────────────
+2026-03-04 07:09:50  INFO      [LOAD]     Dropped 7 noisy columns
+2026-03-04 07:09:50  INFO      [LOAD]     Final shape: 13,649 rows x 26 columns
+2026-03-04 07:09:50  INFO      [LOAD]     Writing to 'hotel_listings' via SQLAlchemy ...
+2026-03-04 07:09:54  INFO      [LOAD]     ✓ Verified 13,649 rows in 'hotel_listings'
+2026-03-04 07:09:54  INFO      
+── STEP 8: UPLOAD CLEAN DATA TO S3 ─────────────────────────
+2026-03-04 07:10:31  INFO      [S3 CLEAN] ✓ Clean data uploaded → s3://makemytrip-hotels-etl/processed/hotels_clean_20260304_070954.csv
+2026-03-04 07:10:31  INFO      
+=================================================================
+2026-03-04 07:10:31  INFO        PIPELINE COMPLETE
+2026-03-04 07:10:31  INFO      =================================================================
+2026-03-04 07:10:31  INFO        Raw rows extracted   : 20,046
+2026-03-04 07:10:31  INFO        Clean rows loaded    : 13,649
+2026-03-04 07:10:31  INFO        Rejected rows        : 4,187  (20.9%)
+2026-03-04 07:10:31  INFO        Time elapsed         : 134.26s
+2026-03-04 07:10:31  INFO        Pipeline log         → logs/pipeline_20260304_070817.log
+2026-03-04 07:10:31  INFO        Rejected records     → logs/rejected_records.csv
+2026-03-04 07:10:31  INFO      =================================================================
